@@ -9,4 +9,16 @@
     This is the home page...
 </h1>
 </body>
+<script>
+    let socket = null;
+    //Gonna wait till the doc is loaded before executing this function
+    document.addEventListener("DOMContentLoaded", function () {
+        //Using a nonsecure websocket for dev. Prod would be wss
+        socket = new WebSocket("ws://127.0.0.1:8080/ws")
+
+        socket.onopen = () => {
+            console.log("Successfully connected")
+        }
+    })
+</script>
 </html>
