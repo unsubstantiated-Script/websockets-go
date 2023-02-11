@@ -1,11 +1,18 @@
 package handlers
 
 import (
+	"fmt"
 	"github.com/CloudyKit/jet/v6"
 	"github.com/gorilla/websocket"
 	"log"
 	"net/http"
 )
+
+//Only accepts payload type
+var wsChan = make(chan WsPayload)
+
+//When someone connects to the connection, we'll add em to the map
+var clients = make(map[WsConnection]string)
 
 var views = jet.NewSet(
 	//Setting up JET
@@ -29,11 +36,24 @@ func Home(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// WsConnection Websocket connection
+type WsConnection struct {
+	*websocket.Conn
+}
+
 // WsJsonResponse Structuring JSON for a response sent back from websocket
 type WsJsonResponse struct {
 	Action      string `json:"action"`
 	Message     string `json:"message"`
 	MessageType string `json:"message_type"`
+}
+
+type WsPayload struct {
+	Action   string `json:"action"`
+	Username string `json:"username"`
+	Message  string `json:"message"`
+	//How to leave something out of the json
+	Conn WsConnection `json:"-"`
 }
 
 // WsEndpoint Handler that handles our WebSocket Endpoint
@@ -49,9 +69,64 @@ func WsEndpoint(w http.ResponseWriter, r *http.Request) {
 	var response WsJsonResponse
 	response.Message = `<em><small>Connected to the server boy! You got socket action going!</small></em>`
 
+	//Creating a new Websocket connection and adding it to our list of clients
+	conn := WsConnection{Conn: ws}
+	clients[conn] = ""
+
 	err = ws.WriteJSON(response)
 	if err != nil {
 		log.Println(err)
+	}
+
+	go ListenForWs(&conn)
+}
+
+//Putting our clients through a Go Routine
+func ListenForWs(conn *WsConnection) {
+	//When the main function here stops executing, execute this function. Mostly to fire off an error
+	defer func() {
+		//If there's a lockup, assign r to recover(). If r is equal to something, log the error. Will recover if things die.
+		if r := recover(); r != nil {
+			log.Println("Error", fmt.Sprintf("%v", r))
+		}
+	}()
+
+	var payload WsPayload
+
+	//Here we are listening for a payload
+	for {
+		err := conn.ReadJSON(&payload)
+
+		if err != nil {
+			//do nothing...
+		} else {
+			payload.Conn = *conn
+			wsChan <- payload
+		}
+	}
+}
+
+func ListenToWsChannel() {
+	var response WsJsonResponse
+
+	for {
+		//Reading from wsChan
+		e := <-wsChan
+
+		response.Action = "Got Here"
+		response.Message = fmt.Sprintf("Some Message, and action was %s", e.Action)
+		broadcastToAll(response)
+	}
+}
+
+func broadcastToAll(response WsJsonResponse) {
+	for client := range clients {
+		err := client.WriteJSON(response)
+		if err != nil {
+			log.Println("Websocket error")
+			_ = client.Close()
+			delete(clients, client)
+		}
 	}
 }
 
