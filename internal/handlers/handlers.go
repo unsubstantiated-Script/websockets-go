@@ -6,7 +6,12 @@ import (
 	"github.com/gorilla/websocket"
 	"log"
 	"net/http"
+	"sort"
 )
+
+//& check the address
+//*int pointer that's a base type
+//*p operator that returns the value of what p is pointing to
 
 //Only accepts payload type
 var wsChan = make(chan WsPayload)
@@ -43,9 +48,10 @@ type WsConnection struct {
 
 // WsJsonResponse Structuring JSON for a response sent back from websocket
 type WsJsonResponse struct {
-	Action      string `json:"action"`
-	Message     string `json:"message"`
-	MessageType string `json:"message_type"`
+	Action         string   `json:"action"`
+	Message        string   `json:"message"`
+	MessageType    string   `json:"message_type"`
+	ConnectedUsers []string `json:"connected_users"`
 }
 
 type WsPayload struct {
@@ -81,7 +87,7 @@ func WsEndpoint(w http.ResponseWriter, r *http.Request) {
 	go ListenForWs(&conn)
 }
 
-//Putting our clients through a Go Routine
+// ListenForWs Putting our clients through a Go Routine
 func ListenForWs(conn *WsConnection) {
 	//When the main function here stops executing, execute this function. Mostly to fire off an error
 	defer func() {
@@ -113,10 +119,33 @@ func ListenToWsChannel() {
 		//Reading from wsChan
 		e := <-wsChan
 
-		response.Action = "Got Here"
-		response.Message = fmt.Sprintf("Some Message, and action was %s", e.Action)
-		broadcastToAll(response)
+		switch e.Action {
+		case "username":
+			//get a list of all users and send it back via broadcast
+			clients[e.Conn] = e.Username
+			users := getUserList()
+			response.Action = "list_users"
+			response.ConnectedUsers = users
+			broadcastToAll(response)
+		}
+
+		//response.Action = "Got Here"
+		//response.Message = fmt.Sprintf("Some Message, and action was %s", e.Action)
+		//broadcastToAll(response)
 	}
+}
+
+func getUserList() []string {
+
+	//Building user list into a slice array
+	var userList []string
+	for _, x := range clients {
+		userList = append(userList, x)
+	}
+
+	//Organizing the list in alphabetical order and returning
+	sort.Strings(userList)
+	return userList
 }
 
 func broadcastToAll(response WsJsonResponse) {
